@@ -1,10 +1,18 @@
 package net.osmand.plus.quickaction.actions;
 
 import android.content.DialogInterface;
+import android.os.Bundle;
 import android.support.v7.app.AlertDialog;
+import android.support.v7.widget.RecyclerView;
+import android.support.v7.widget.SwitchCompat;
+import android.support.v7.widget.helper.ItemTouchHelper;
 import android.text.TextUtils;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import net.osmand.plus.OsmandApplication;
@@ -12,8 +20,11 @@ import net.osmand.plus.OsmandPlugin;
 import net.osmand.plus.R;
 import net.osmand.plus.activities.MapActivity;
 import net.osmand.plus.dialogs.ConfigureMapMenu;
+import net.osmand.plus.dialogs.SelectMapStyleQuickActionBottomSheet;
 import net.osmand.plus.openseamapsplugin.NauticalMapsPlugin;
 import net.osmand.plus.quickaction.QuickAction;
+import net.osmand.plus.quickaction.QuickActionItemTouchHelperCallback;
+import net.osmand.plus.quickaction.QuickActionListFragment;
 import net.osmand.plus.quickaction.SwitchableAction;
 import net.osmand.plus.render.RendererRegistry;
 import net.osmand.plus.views.OsmandMapTileView;
@@ -29,6 +40,7 @@ public class MapStyleAction extends SwitchableAction<String> {
 	public static final int TYPE = 14;
 
 	private final static String KEY_STYLES = "styles";
+	public static final String KEY_DIALOG = "dialog";
 
 	public MapStyleAction() {
 		super(TYPE);
@@ -41,8 +53,19 @@ public class MapStyleAction extends SwitchableAction<String> {
 	@Override
 	public void execute(MapActivity activity) {
 
-		List<String> mapStyles = getFilteredStyles();
+		ArrayList<String> mapStyles = (ArrayList<String>) getFilteredStyles();
+		boolean showBottomSheetStyles = Boolean.valueOf(getParams().get(KEY_DIALOG));
+		if (showBottomSheetStyles) {
+			SelectMapStyleQuickActionBottomSheet fragment = new SelectMapStyleQuickActionBottomSheet();
 
+			Bundle args = new Bundle();
+			args.putStringArrayList("test", mapStyles);
+			args.putInt("type", MapStyleAction.TYPE);
+			fragment.setArguments(args);
+			fragment.show(activity.getSupportFragmentManager(),
+					SelectMapStyleQuickActionBottomSheet.TAG);
+			return;
+		}
 		String curStyle = activity.getMyApplication().getSettings().RENDERER.get();
 		int index = mapStyles.indexOf(curStyle);
 		String nextStyle = mapStyles.get(0);
@@ -161,8 +184,60 @@ public class MapStyleAction extends SwitchableAction<String> {
 	}
 
 	@Override
+	public void drawUI(ViewGroup parent, final MapActivity activity) {
+
+		View view = LayoutInflater.from(parent.getContext())
+				.inflate(R.layout.quick_action_switchable_action, parent, false);
+
+
+		SwitchCompat showDialog = (SwitchCompat) view.findViewById(R.id.saveButton);
+		if (!getParams().isEmpty()) {
+			showDialog.setChecked(Boolean.valueOf(getParams().get(KEY_DIALOG)));
+		}
+
+		final RecyclerView list = (RecyclerView) view.findViewById(R.id.list);
+
+		final QuickActionItemTouchHelperCallback touchHelperCallback = new QuickActionItemTouchHelperCallback();
+		final ItemTouchHelper touchHelper = new ItemTouchHelper(touchHelperCallback);
+
+		final Adapter adapter = new Adapter(new QuickActionListFragment.OnStartDragListener() {
+			@Override
+			public void onStartDrag(RecyclerView.ViewHolder viewHolder) {
+				touchHelper.startDrag(viewHolder);
+			}
+		});
+
+		touchHelperCallback.setItemMoveCallback(adapter);
+		touchHelper.attachToRecyclerView(list);
+
+		if (!getParams().isEmpty()) {
+			adapter.addItems(loadListFromParams());
+		}
+
+		list.setAdapter(adapter);
+
+		TextView dscrTitle = (TextView) view.findViewById(R.id.textDscrTitle);
+		TextView dscrHint = (TextView) view.findViewById(R.id.textDscrHint);
+		Button addBtn = (Button) view.findViewById(R.id.btnAdd);
+
+		dscrTitle.setText(parent.getContext().getString(getDiscrTitle()) + ":");
+		dscrHint.setText(getDiscrHint());
+		addBtn.setText(getAddBtnText());
+		addBtn.setOnClickListener(getOnAddBtnClickListener(activity, adapter));
+
+		parent.addView(view);
+	}
+
+	@Override
 	protected void saveListToParams(List<String> styles) {
 		getParams().put(getListKey(), TextUtils.join(",", styles));
+	}
+
+	@Override
+	public boolean fillParams(View root, MapActivity activity) {
+		super.fillParams(root, activity);
+		getParams().put(KEY_DIALOG, Boolean.toString(((SwitchCompat) root.findViewById(R.id.saveButton)).isChecked()));
+		return true;
 	}
 
 	@Override
